@@ -1,6 +1,8 @@
 {
-  "name": "QuizMaster Pro - Timer & Scoreboard by Aep Saepudin",
+  "name": "Remix QuizMaster Pro v3 - Timer \u0026 Scoreboard by Aep Saepudin",
   "description": "A professional real-time quiz competition dashboard with multi-team score tracking, customizable countdown timers, and synchronized sound effects.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
