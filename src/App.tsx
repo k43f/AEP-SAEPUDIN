@@ -44,9 +44,21 @@ interface Team {
   label: string;
 }
 
+const TEAM_PALETTES = [
+  { label: 'A', color: '#ef4444' }, // Red
+  { label: 'B', color: '#3b82f6' }, // Blue
+  { label: 'C', color: '#10b981' }, // Green
+  { label: 'D', color: '#f59e0b' }, // Amber
+  { label: 'E', color: '#8b5cf6' }, // Purple
+  { label: 'F', color: '#ec4899' }, // Pink
+  { label: 'G', color: '#06b6d4' }, // Cyan
+  { label: 'H', color: '#f97316' }, // Orange
+];
+
 const DEFAULT_SECTIONS: QuestionSection[] = [
-  { id: 's1', name: 'Pertanyaan Wajib', count: 10 },
-  { id: 's2', name: 'Pertanyaan Rebutan', count: 10 },
+  { id: 's1', name: 'Soal Wajib', count: 10 },
+  { id: 's2', name: 'Soal Wajib-Lempar', count: 10 },
+  { id: 's3', name: 'Soal Rebutan', count: 10 },
 ];
 
 const DEFAULT_TEAMS: Team[] = [
@@ -58,61 +70,63 @@ const DEFAULT_TEAMS: Team[] = [
 
 const TIME_PRESETS = [
   { label: '10s', value: 10 },
+  { label: '20s', value: 20 },
   { label: '30s', value: 30 },
   { label: '60s', value: 60 },
-  { label: '2m', value: 120 },
   { label: '5m', value: 300 },
 ];
 
-const ROUNDS = ['Babak 1', 'Babak 2', 'Babak 3', 'Babak 4', 'Final'];
-
 export default function App() {
   const [sections, setSections] = useState<QuestionSection[]>(() => {
-    const saved = localStorage.getItem('quiz-sections-v5');
+    const saved = localStorage.getItem('quiz-sections-v7');
     return saved ? JSON.parse(saved) : DEFAULT_SECTIONS;
   });
 
-  const getQuestionInstances = useCallback((currentSections: QuestionSection[]): QuestionInstance[] => {
+  const getQuestionInstances = useCallback((currentSections: QuestionSection[], teamLabels: string[]): QuestionInstance[] => {
     const instances: QuestionInstance[] = [];
-    currentSections.forEach(s => {
-      const isWajib = s.name.toLowerCase().includes('wajib');
-      const isRebutan = s.name.toLowerCase().includes('rebutan');
-      
-      if (isWajib) {
-        // Generate N questions for EACH team
-        ['A', 'B', 'C', 'D'].forEach(teamLabel => {
-          for (let i = 1; i <= s.count; i++) {
-            instances.push({
-              sectionId: s.id,
-              sectionName: s.name,
-              localIdx: i,
-              targetTeamLabel: teamLabel,
-              isRebutan: false
-            });
-          }
-        });
-      } else {
-        // Shared questions
+
+    // Separate team-specific sections (e.g. Wajib, Wajib-Lempar) from shared sections (e.g. Rebutan)
+    const teamSections = currentSections.filter(s => !s.name.toLowerCase().includes('rebutan'));
+    const sharedSections = currentSections.filter(s => s.name.toLowerCase().includes('rebutan'));
+
+    // Group rows per team: Regu A (Wajib, Wajib-Lempar), Regu B (Wajib, Wajib-Lempar), etc.
+    teamLabels.forEach(teamLabel => {
+      teamSections.forEach(s => {
         for (let i = 1; i <= s.count; i++) {
           instances.push({
             sectionId: s.id,
             sectionName: s.name,
             localIdx: i,
-            isRebutan: isRebutan
+            targetTeamLabel: teamLabel,
+            isRebutan: false
           });
         }
+      });
+    });
+
+    // Shared sections (e.g. Soal Rebutan) remain shared at the end
+    sharedSections.forEach(s => {
+      for (let i = 1; i <= s.count; i++) {
+        instances.push({
+          sectionId: s.id,
+          sectionName: s.name,
+          localIdx: i,
+          isRebutan: true
+        });
       }
     });
+
     return instances;
   }, []);
 
   const [teams, setTeams] = useState<Team[]>(() => {
-    const saved = localStorage.getItem('quiz-teams-v5');
-    const initialTeams = saved ? JSON.parse(saved) : DEFAULT_TEAMS;
+    const saved = localStorage.getItem('quiz-teams-v8') || localStorage.getItem('quiz-teams-v7');
+    const initialTeams: Team[] = saved ? JSON.parse(saved) : DEFAULT_TEAMS;
     
-    const savedSections = localStorage.getItem('quiz-sections-v5');
+    const savedSections = localStorage.getItem('quiz-sections-v7');
     const currentSections = savedSections ? JSON.parse(savedSections) : DEFAULT_SECTIONS;
-    const instances = getQuestionInstances(currentSections);
+    const teamLabels = initialTeams.map(t => t.label);
+    const instances = getQuestionInstances(currentSections, teamLabels);
     const totalQuestions = instances.length;
       
     return initialTeams.map((t: Team) => ({
@@ -123,9 +137,37 @@ export default function App() {
     }));
   });
 
-  const [round, setRound] = useState('Babak 1');
+  const [roundCount, setRoundCount] = useState<number>(() => {
+    const saved = localStorage.getItem('quiz-round-count');
+    return saved ? Math.max(1, Math.min(10, parseInt(saved, 10) || 4)) : 4;
+  });
+
+  const roundsList = [
+    ...Array.from({ length: roundCount }, (_, i) => `Babak ${i + 1}`),
+    'Final'
+  ];
+
+  const [round, setRound] = useState(() => {
+    const saved = localStorage.getItem('quiz-current-round');
+    return saved || 'Babak 1';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('quiz-round-count', roundCount.toString());
+  }, [roundCount]);
+
+  useEffect(() => {
+    localStorage.setItem('quiz-current-round', round);
+  }, [round]);
+
+  useEffect(() => {
+    if (!roundsList.includes(round)) {
+      setRound(roundsList[0] || 'Babak 1');
+    }
+  }, [roundsList, round]);
+
   const [eventName, setEventName] = useState(() => localStorage.getItem('quiz-event-name') || 'LOMBA CERDAS CERMAT');
-  const [eventLevel, setEventLevel] = useState(() => localStorage.getItem('quiz-event-level') || 'TINGKAT KABUPATEN');
+  const [eventLevel, setEventLevel] = useState(() => localStorage.getItem('quiz-event-level') || 'Rayon 1');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('quiz-theme');
@@ -144,7 +186,7 @@ export default function App() {
     localStorage.setItem('quiz-event-level', eventLevel);
   }, [eventLevel]);
 
-  const [selectedDuration, setSelectedDuration] = useState(30);
+  const [selectedDuration, setSelectedDuration] = useState(20);
   const [showSettings, setShowSettings] = useState(false);
 
   const { playBeep, playWarning, playGong } = useSound();
@@ -181,14 +223,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem('quiz-teams-v5', JSON.stringify(teams));
+    localStorage.setItem('quiz-teams-v8', JSON.stringify(teams));
   }, [teams]);
 
   useEffect(() => {
-    localStorage.setItem('quiz-sections-v5', JSON.stringify(sections));
+    localStorage.setItem('quiz-sections-v7', JSON.stringify(sections));
     
     // Resize team scores when sections change
-    const instances = getQuestionInstances(sections);
+    const teamLabels = teams.map(t => t.label);
+    const instances = getQuestionInstances(sections, teamLabels);
     const totalQuestions = instances.length;
     
     setTeams(prev => prev.map(t => {
@@ -200,7 +243,48 @@ export default function App() {
       });
       return { ...t, questionScores: newScores };
     }));
-  }, [sections, getQuestionInstances]);
+  }, [sections, getQuestionInstances, teams.length]);
+
+  const handleTeamCountChange = (newCount: number) => {
+    if (newCount < 2 || newCount > 8 || newCount === teams.length) return;
+
+    const targetLabels = Array.from({ length: newCount }, (_, i) => 
+      TEAM_PALETTES[i]?.label || String.fromCharCode(65 + i)
+    );
+
+    const newInstances = getQuestionInstances(sections, targetLabels);
+    const totalQuestions = newInstances.length;
+
+    setTeams(prev => {
+      let updatedTeams: Team[] = [];
+      if (newCount > prev.length) {
+        updatedTeams = [...prev];
+        for (let i = prev.length; i < newCount; i++) {
+          const palette = TEAM_PALETTES[i] || {
+            label: String.fromCharCode(65 + i),
+            color: '#64748b'
+          };
+          updatedTeams.push({
+            id: (i + 1).toString(),
+            name: '',
+            questionScores: Array(totalQuestions).fill(0),
+            color: palette.color,
+            label: palette.label,
+          });
+        }
+      } else {
+        updatedTeams = prev.slice(0, newCount);
+      }
+
+      return updatedTeams.map(t => {
+        const newScores = Array(totalQuestions).fill(0);
+        t.questionScores.forEach((score, idx) => {
+          if (idx < totalQuestions) newScores[idx] = score;
+        });
+        return { ...t, questionScores: newScores };
+      });
+    });
+  };
 
   const handleQuestionScoreChange = (teamId: string, qIdx: number, val: number) => {
     setTeams(prev => prev.map(t => {
@@ -218,6 +302,9 @@ export default function App() {
   };
 
   const [confirmType, setConfirmType] = useState<'scores' | 'data' | null>(null);
+
+  const teamLabels = teams.map(t => t.label);
+  const questionInstances = getQuestionInstances(sections, teamLabels);
 
   const handleResetOnlyScores = () => {
     const totalQuestions = questionInstances.length;
@@ -244,8 +331,6 @@ export default function App() {
   const highestScore = Math.max(...teams.map(calculateTotal));
   const winners = teams.filter(t => calculateTotal(t) === highestScore && highestScore > 0);
 
-  const questionInstances = getQuestionInstances(sections);
-
   const addSection = () => {
     setSections([...sections, { id: Math.random().toString(36).substr(2, 9), name: 'Bagian Baru', count: 5 }]);
   };
@@ -262,29 +347,53 @@ export default function App() {
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
-    const timestamp = new Date().toLocaleString();
+    const timestamp = new Date().toLocaleString('id-ID');
     
     // Header
-    doc.setFontSize(18);
-    doc.text(eventName.toUpperCase(), 105, 15, { align: 'center' });
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text(eventName.toUpperCase(), 105, 14, { align: 'center' });
     doc.setFontSize(12);
-    doc.text(eventLevel.toUpperCase(), 105, 22, { align: 'center' });
-    doc.setFontSize(10);
-    doc.text(`Babak: ${round} | Dicetak pada: ${timestamp}`, 105, 30, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text(eventLevel.toUpperCase(), 105, 20, { align: 'center' });
+    doc.setFontSize(9);
+    doc.text(`${round} | Dicetak pada: ${timestamp}`, 105, 26, { align: 'center' });
 
-    // Summary Table
-    const summaryData = teams.map(t => [
+    // Calculate Rankings for Keterangan column
+    const sortedUniqueScores = Array.from(new Set<number>(teams.map(t => calculateTotal(t)))).sort((a, b) => b - a);
+    const getKeterangan = (team: Team) => {
+      const score = calculateTotal(team);
+      const rankIndex = sortedUniqueScores.indexOf(score);
+      if (rankIndex >= 0) {
+        return `Juara ${rankIndex + 1}`;
+      }
+      return '-';
+    };
+
+    // Summary Table sorted by rank / score descending
+    const sortedTeamsForSummary = [...teams].sort((a, b) => calculateTotal(b) - calculateTotal(a));
+    const summaryData = sortedTeamsForSummary.map((t, idx) => [
+      (idx + 1).toString(),
       `Regu ${t.label}`,
-      t.name || 'TANPA NAMA',
-      calculateTotal(t).toString()
+      t.name ? t.name.toUpperCase() : 'TANPA NAMA',
+      calculateTotal(t).toString(),
+      getKeterangan(t)
     ]);
 
     autoTable(doc, {
-      startY: 40,
-      head: [['Regu', 'Nama Sekolah', 'Total Skor']],
+      startY: 32,
+      head: [['Peringkat', 'Regu', 'Nama Sekolah / Peserta', 'Total Skor', 'Keterangan']],
       body: summaryData,
       theme: 'striped',
-      headStyles: { fillColor: [59, 130, 246] }
+      headStyles: { fillColor: [59, 130, 246], fontStyle: 'bold', halign: 'center' },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 22 },
+        1: { halign: 'center', cellWidth: 25, fontStyle: 'bold' },
+        2: { halign: 'left' },
+        3: { halign: 'center', cellWidth: 25, fontStyle: 'bold' },
+        4: { halign: 'center', cellWidth: 30, fontStyle: 'bold' },
+      },
+      styles: { fontSize: 9 }
     });
 
     // Detailed Scores Table
@@ -296,20 +405,85 @@ export default function App() {
     ]);
 
     autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 10,
+      startY: (doc as any).lastAutoTable.finalY + 8,
       head: [['No', 'Bagian', 'Item', ...teams.map(t => `Regu ${t.label}`)]],
       body: detailedData,
       theme: 'grid',
-      headStyles: { fillColor: [71, 85, 105] },
-      styles: { fontSize: 8 }
+      headStyles: { fillColor: [71, 85, 105], halign: 'center' },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 12 },
+        1: { cellWidth: 45 },
+        2: { cellWidth: 25 },
+      }
     });
 
     // Footer
-    const finalY = (doc as any).lastAutoTable.finalY + 20;
-    doc.text('Mengetahui,', 150, finalY);
-    doc.text('Panitia Lomba', 150, finalY + 20);
+    const finalY = (doc as any).lastAutoTable.finalY + 15;
+    doc.setFontSize(9);
+    doc.text('Mengetahui,', 145, finalY);
+    doc.text('Panitia Lomba', 145, finalY + 18);
 
-    doc.save(`Hasil_${round.replace(/\s/g, '_')}_${new Date().getTime()}.pdf`);
+    // Format segments for filename: Hasil_LCC_Rayon1_Babak1.pdf
+    const sanitizeWord = (word: string) => {
+      const clean = word.trim().toLowerCase();
+      if (!clean) return '';
+      return clean.charAt(0).toUpperCase() + clean.slice(1);
+    };
+
+    const getEventCode = (name: string) => {
+      const clean = name.trim();
+      if (!clean) return 'LCC';
+      if (/lomba\s+cerdas\s+cermat/i.test(clean) || /cerdas\s+cermat/i.test(clean)) return 'LCC';
+      const words = clean.split(/\s+/);
+      if (words.length === 1 && clean.length <= 8) {
+        return clean.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      }
+      if (clean.length > 15) {
+        return words.map(w => w[0]?.toUpperCase() || '').join('');
+      }
+      return words.map(sanitizeWord).join('').replace(/[^a-zA-Z0-9]/g, '');
+    };
+
+    const cleanRayonPart = (level: string) => {
+      const clean = level.trim();
+      if (!clean) return 'Rayon1';
+      
+      // Match pattern like "Rayon 3", "TINGKAT RAYON 3", "Rayon 1A", "Rayon Barat"
+      const rayonMatch = clean.match(/rayon\s*([a-zA-Z0-9]+)/i);
+      if (rayonMatch) {
+        const numOrName = sanitizeWord(rayonMatch[1]);
+        return `Rayon${numOrName}`;
+      }
+
+      // Filter out redundant prefix words like "tingkat"
+      const words = clean
+        .split(/[\s\-_/]+/)
+        .filter(w => !/^tingkat$/i.test(w) || clean.split(/\s+/).length === 1);
+      
+      return words.map(sanitizeWord).join('').replace(/[^a-zA-Z0-9]/g, '') || 'Rayon1';
+    };
+
+    const cleanRoundPart = (rnd: string) => {
+      const clean = rnd.trim();
+      if (!clean) return 'Babak1';
+      const babakMatch = clean.match(/babak\s*([a-zA-Z0-9]+)/i);
+      if (babakMatch) {
+        const numOrName = sanitizeWord(babakMatch[1]);
+        return `Babak${numOrName}`;
+      }
+      if (/final/i.test(clean)) return 'Final';
+      return clean
+        .split(/[\s\-_/]+/)
+        .map(sanitizeWord)
+        .join('')
+        .replace(/[^a-zA-Z0-9]/g, '');
+    };
+
+    const eventPart = getEventCode(eventName || 'LCC');
+    const rayonPart = cleanRayonPart(eventLevel || 'Rayon1');
+    const babakPart = cleanRoundPart(round || 'Babak1');
+    doc.save(`Hasil_${eventPart}_${rayonPart}_${babakPart}.pdf`);
   };
 
   return (
@@ -321,7 +495,7 @@ export default function App() {
             <Trophy className="text-blue-500" size={18} />
             <div className="flex flex-col">
               <h1 className={`text-sm font-black ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} uppercase tracking-tighter leading-tight`}>
-                QuizMaster Pro <span className={isDarkMode ? 'text-slate-600' : 'text-slate-400'}>v5.0</span>
+                QuizMaster Pro <span className={isDarkMode ? 'text-slate-600' : 'text-slate-400'}>v7.0</span>
               </h1>
               <span className={`text-[9px] font-black ${theme.textMuted} uppercase tracking-widest leading-tight`}>created by Aep Sepudin, M.Pd</span>
               <span className={`text-[8px] font-bold ${isDarkMode ? 'text-slate-600' : 'text-slate-400'} uppercase tracking-tight leading-tight`}>WA 0895326931483 • fisika77@gmail.com</span>
@@ -343,7 +517,7 @@ export default function App() {
                 onChange={(e) => setRound(e.target.value)}
                 className={`${theme.select} text-blue-500 text-xs font-black px-4 py-1.5 rounded-xl appearance-none cursor-pointer hover:border-blue-500/50 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500/50 pr-8 uppercase tracking-widest`}
               >
-                {ROUNDS.map(r => (
+                {roundsList.map(r => (
                   <option key={r} value={r}>{r}</option>
                 ))}
               </select>
@@ -460,6 +634,101 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-col gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <Users size={12} className="text-blue-400" />
+                        Jumlah Regu / Peserta
+                      </span>
+                      <span className="text-xs font-black text-blue-400 font-mono">{teams.length} REGU</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      {[2, 3, 4, 5, 6].map(num => (
+                        <button
+                          key={num}
+                          onClick={() => handleTeamCountChange(num)}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${
+                            teams.length === num
+                              ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/20'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 pt-1 border-t border-slate-800/60">
+                      <span>Pilihan Kustom (2 - 8 Regu):</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleTeamCountChange(Math.max(2, teams.length - 1))}
+                          disabled={teams.length <= 2}
+                          className="w-6 h-6 rounded bg-slate-900 border border-slate-800 text-slate-300 hover:text-white flex items-center justify-center disabled:opacity-30 text-xs font-bold"
+                        >
+                          -
+                        </button>
+                        <span className="w-6 text-center font-mono font-black text-white text-xs">{teams.length}</span>
+                        <button
+                          onClick={() => handleTeamCountChange(Math.min(8, teams.length + 1))}
+                          disabled={teams.length >= 8}
+                          className="w-6 h-6 rounded bg-slate-900 border border-slate-800 text-slate-300 hover:text-white flex items-center justify-center disabled:opacity-30 text-xs font-bold"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <Clock size={12} className="text-amber-400" />
+                        Banyak Babak
+                      </span>
+                      <span className="text-xs font-black text-amber-400 font-mono">
+                        {roundCount} BABAK + FINAL
+                      </span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      {[1, 2, 3, 4, 5, 6].map(num => (
+                        <button
+                          key={num}
+                          onClick={() => setRoundCount(num)}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-black border transition-all ${
+                            roundCount === num
+                              ? 'bg-amber-600 border-amber-500 text-white shadow-md shadow-amber-500/20'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-bold text-slate-500 pt-1 border-t border-slate-800/60">
+                      <span>Pilihan Kustom (1 - 10 Babak):</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setRoundCount(Math.max(1, roundCount - 1))}
+                          disabled={roundCount <= 1}
+                          className="w-6 h-6 rounded bg-slate-900 border border-slate-800 text-slate-300 hover:text-white flex items-center justify-center disabled:opacity-30 text-xs font-bold"
+                        >
+                          -
+                        </button>
+                        <span className="w-6 text-center font-mono font-black text-white text-xs">{roundCount}</span>
+                        <button
+                          onClick={() => setRoundCount(Math.min(10, roundCount + 1))}
+                          disabled={roundCount >= 10}
+                          className="w-6 h-6 rounded bg-slate-900 border border-slate-800 text-slate-300 hover:text-white flex items-center justify-center disabled:opacity-30 text-xs font-bold"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[8px] font-medium text-slate-400 italic">
+                      * Babak Final tetap otomatis disertakan di akhir pilihan dropdown.
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Identitas Kegiatan</span>
                     <div className="space-y-2">
                       <div className="flex flex-col">
@@ -473,13 +742,13 @@ export default function App() {
                         />
                       </div>
                       <div className="flex flex-col">
-                        <label className={`text-[8px] font-black ${theme.textMuted} uppercase mb-1`}>Tingkat</label>
+                        <label className={`text-[8px] font-black ${theme.textMuted} uppercase mb-1`}>Tingkat / Rayon</label>
                         <input
                           type="text"
                           value={eventLevel}
                           onChange={(e) => setEventLevel(e.target.value)}
                           className={`${theme.input} rounded-lg p-2 text-xs font-bold outline-none focus:border-blue-500`}
-                          placeholder="Rayon/Kabupaten..."
+                          placeholder="Contoh: Rayon 1 / Rayon 2 / Kabupaten..."
                         />
                       </div>
                     </div>
@@ -599,12 +868,17 @@ export default function App() {
 
             <div className="flex flex-row items-center gap-3 overflow-x-auto custom-scrollbar pb-1">
               {sections.map(s => {
-                const isWajib = s.name.toLowerCase().includes('wajib');
-                const label = isWajib ? 'WAJIB' : 'REBUTAN';
+                const nameLower = s.name.toLowerCase();
+                const isRebutan = nameLower.includes('rebutan');
+                const isLempar = nameLower.includes('lempar');
+                const isWajib = nameLower.includes('wajib') && !isLempar;
+
+                const label = isWajib ? 'WAJIB' : isLempar ? 'WAJIB-LEMPAR' : isRebutan ? 'REBUTAN' : 'BAGIAN';
+                const labelColor = isWajib ? 'text-blue-500/60' : isLempar ? 'text-amber-500/60' : isRebutan ? 'text-purple-500/60' : 'text-slate-500/60';
                 return (
                   <div key={s.id} className={`flex items-center gap-3 ${theme.cardInner} p-2 rounded-2xl border ${theme.borderLight} shrink-0`}>
                     <div className="flex flex-col">
-                      <span className={`text-[8px] font-black tracking-widest ${isWajib ? 'text-blue-500/60' : 'text-purple-500/60'}`}>{label}</span>
+                      <span className={`text-[8px] font-black tracking-widest ${labelColor}`}>{label}</span>
                       <input
                         type="text"
                         value={s.name}
@@ -633,7 +907,12 @@ export default function App() {
         </div>
 
         {/* ScoreBoard Summary Header */}
-        <div className="grid grid-cols-4 gap-4 px-4 overflow-hidden shrink-0">
+        <div 
+          className="grid gap-3 px-4 pt-3.5 pb-1 overflow-x-auto custom-scrollbar shrink-0 relative z-10"
+          style={{ 
+            gridTemplateColumns: `repeat(${teams.length}, minmax(${teams.length > 5 ? '160px' : '190px'}, 1fr))` 
+          }}
+        >
           {teams.map(team => {
             const isWinner = winners.some(w => w.id === team.id);
             
@@ -642,9 +921,9 @@ export default function App() {
             const fontSizeClass = nameLength > 25 ? 'text-xs' : nameLength > 20 ? 'text-sm' : nameLength > 15 ? 'text-base' : 'text-xl';
 
             return (
-              <div key={team.id} className="relative group">
+              <div key={team.id} className={`relative group ${isWinner ? 'z-20' : 'z-0'}`}>
                 <div 
-                  className={`flex flex-col items-center justify-center p-4 rounded-3xl border-2 transition-all shadow-xl h-full min-h-[140px] ${isWinner ? 'animate-winner-glow' : ''}`}
+                  className={`flex flex-col items-center justify-center p-4 rounded-3xl border-2 transition-all shadow-xl h-full min-h-[140px] relative ${isWinner ? 'animate-winner-glow' : ''}`}
                   style={{ 
                     borderColor: isWinner ? team.color : (isDarkMode ? `${team.color}40` : `${team.color}20`),
                     backgroundColor: isDarkMode ? `${team.color}05` : `${team.color}03`,
@@ -674,8 +953,11 @@ export default function App() {
                     {calculateTotal(team)}
                   </div>
                   {isWinner && (
-                    <div className="absolute -top-2 -right-2 bg-yellow-400 text-slate-950 p-2 rounded-full shadow-lg border-2 border-slate-950 animate-bounce">
-                      <Trophy size={16} />
+                    <div 
+                      className="absolute -top-3.5 -right-2 z-30 bg-gradient-to-tr from-amber-400 to-yellow-300 text-slate-950 p-2 rounded-full shadow-2xl border-2 border-slate-950 animate-bounce flex items-center justify-center ring-2 ring-yellow-400/60"
+                      title="Juara / Skor Tertinggi"
+                    >
+                      <Trophy size={18} className="fill-slate-950 text-slate-950 drop-shadow" />
                     </div>
                   )}
                 </div>
@@ -686,36 +968,54 @@ export default function App() {
 
         {/* Unified Questions Table */}
         <div className={`flex-1 ${isDarkMode ? 'bg-slate-900/30' : 'bg-white/50'} border ${theme.border} rounded-3xl overflow-hidden flex flex-col shadow-inner`}>
-          <div className={`${theme.card} py-2 px-4 border-b ${theme.border} sticky top-0 z-20`}>
-            <div className="grid grid-cols-12 gap-4 items-center">
-              <div className={`col-span-1 text-[10px] font-black ${theme.textMuted} uppercase`}>NO</div>
-              <div className={`col-span-3 text-[10px] font-black ${theme.textMuted} uppercase`}>BAGIAN / PERTANYAAN</div>
-              <div className="col-span-2 text-center text-xs font-black text-red-500">REGU A</div>
-              <div className="col-span-2 text-center text-xs font-black text-blue-500">REGU B</div>
-              <div className="col-span-2 text-center text-xs font-black text-green-500">REGU C</div>
-              <div className="col-span-2 text-center text-xs font-black text-amber-500">REGU D</div>
+          <div className={`${theme.card} py-2 px-4 border-b ${theme.border} sticky top-0 z-20 overflow-x-auto custom-scrollbar`}>
+            <div 
+              className="grid gap-3 items-center min-w-[640px]"
+              style={{
+                gridTemplateColumns: `40px minmax(160px, 1.6fr) repeat(${teams.length}, minmax(70px, 1fr))`
+              }}
+            >
+              <div className={`text-center text-[10px] font-black ${theme.textMuted} uppercase`}>NO</div>
+              <div className={`text-[10px] font-black ${theme.textMuted} uppercase`}>BAGIAN / PERTANYAAN</div>
+              {teams.map(team => (
+                <div key={team.id} className="text-center text-xs font-black uppercase" style={{ color: team.color }}>
+                  REGU {team.label}
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+          <div className="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar p-2 space-y-1">
             {questionInstances.map((inst, qIdx) => (
-              <div key={qIdx} className={`grid grid-cols-12 gap-4 items-center py-0.5 px-4 ${isDarkMode ? 'bg-slate-900/50' : 'bg-white'} rounded-xl border ${theme.borderLight} hover:border-blue-500/30 transition-colors`}>
-                <div className={`col-span-1 text-xs font-mono font-bold ${theme.textMuted}`}>{qIdx + 1}</div>
-                <div className="col-span-3 flex flex-col">
-                  <span className={`text-[9px] font-black uppercase tracking-widest ${inst.isRebutan ? 'text-purple-500/60' : 'text-blue-500/60'}`}>
+              <div 
+                key={qIdx} 
+                className={`grid gap-3 items-center py-1 px-4 min-w-[640px] ${isDarkMode ? 'bg-slate-900/50' : 'bg-white'} rounded-xl border ${theme.borderLight} hover:border-blue-500/30 transition-colors`}
+                style={{
+                  gridTemplateColumns: `40px minmax(160px, 1.6fr) repeat(${teams.length}, minmax(70px, 1fr))`
+                }}
+              >
+                <div className={`text-center text-xs font-mono font-bold ${theme.textMuted}`}>{qIdx + 1}</div>
+                <div className="flex flex-col min-w-0 pr-2">
+                  <span className={`text-[9px] font-black uppercase tracking-widest truncate ${
+                    inst.sectionName.toLowerCase().includes('rebutan')
+                      ? 'text-purple-500/80'
+                      : inst.sectionName.toLowerCase().includes('lempar')
+                      ? 'text-amber-500/80'
+                      : 'text-blue-500/80'
+                  }`}>
                     {inst.sectionName} {inst.targetTeamLabel ? `Regu ${inst.targetTeamLabel}` : ''}
                   </span>
                   <span className={`text-[10px] font-bold ${theme.textDim}`}>Pertanyaan {inst.localIdx}</span>
                 </div>
                 {teams.map(team => (
-                  <div key={team.id} className="col-span-2 px-2">
+                  <div key={team.id} className="px-1">
                     <input
                       type="number"
                       value={team.questionScores[qIdx] === 0 ? '' : team.questionScores[qIdx]}
                       onChange={(e) => handleQuestionScoreChange(team.id, qIdx, parseInt(e.target.value) || 0)}
-                      className={`w-full border text-center py-0.5 rounded-lg text-sm font-black font-mono focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all ${
+                      className={`w-full border text-center py-1 rounded-lg text-sm font-black font-mono focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all ${
                         inst.targetTeamLabel === team.label 
-                          ? 'bg-blue-600/10 border-blue-500/30 text-blue-400' 
+                          ? 'bg-blue-600/10 border-blue-500/30 text-blue-400 font-extrabold' 
                           : `${isDarkMode ? 'bg-slate-950/80 border-slate-800 text-white opacity-40 hover:opacity-100' : 'bg-slate-50 border-slate-200 text-slate-900 opacity-60 hover:opacity-100'}`
                       }`}
                       placeholder="-"
